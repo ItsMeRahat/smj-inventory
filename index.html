@@ -1070,8 +1070,8 @@ function cardHTML(r, i){
     ? '<div class="remark out">' + ic('alert') + ' Order the Item</div>' : '';
   const actions = (canSell || canRate)
     ? '<div class="pc-foot">' +
-        (canSell ? '<button class="btn" type="button" data-a="sell" data-code="' + esc(f.code) + '">' + ic('cart') + esc(t('sell')) + '</button>' : '') +
-        (canRate ? '<button class="btn sec2" type="button" data-a="rate" data-code="' + esc(f.code) + '">' + ic('edit') + esc(t('rate')) + '</button>' : '') +
+        (canSell ? '<button class="btn" type="button" data-a="sell" data-code="' + esc(f.code) + '" data-row-index="' + c.rows.indexOf(r) + '">' + ic('cart') + esc(t('sell')) + '</button>' : '') +
+        (canRate ? '<button class="btn sec2" type="button" data-a="rate" data-code="' + esc(f.code) + '" data-row-index="' + c.rows.indexOf(r) + '">' + ic('edit') + esc(t('rate')) + '</button>' : '') +
       '</div>' : '';
   return '<article class="card pc lv-' + f.level + '" style="animation-delay:' + (Math.min(i, 10) * 35) + 'ms">' +
     '<div class="pc-top"><div style="min-width:0"><h3 class="pc-name">' + esc(f.name || t('nameNA')) + '</h3>' +
@@ -1132,8 +1132,8 @@ function tableHTML(){
       '<td class="r num" style="color:var(--blue);font-weight:700">' + (!f.sell ? '—' : fmt(f.sell, 2)) + '</td>' +
       profitCell +
       '<td class="r"><div class="ta">' +
-        (canSell ? '<button class="btn sm" type="button" data-a="sell" data-code="' + esc(f.code) + '">' + esc(t('sell')) + '</button>' : '') +
-        (canRate ? '<button class="btn sm sec2" type="button" data-a="rate" data-code="' + esc(f.code) + '">' + esc(t('rate')) + '</button>' : '') +
+        (canSell ? '<button class="btn sm" type="button" data-a="sell" data-code="' + esc(f.code) + '" data-row-index="' + c.rows.indexOf(r) + '">' + esc(t('sell')) + '</button>' : '') +
+        (canRate ? '<button class="btn sm sec2" type="button" data-a="rate" data-code="' + esc(f.code) + '" data-row-index="' + c.rows.indexOf(r) + '">' + esc(t('rate')) + '</button>' : '') +
       '</div></td></tr>';
     const drow = '<tr class="drow" hidden><td colspan="' + cols + '"><div class="detbox">' + detailsGrid(c, r) + '</div></td></tr>';
     return main + drow;
@@ -1350,15 +1350,15 @@ function curRow(){
   if (!CUR) return null;
   const c = S.cats[CUR.cat];
   if (!c) return null;
-  const row = findRow(c, CUR.code);
+  const row = Number.isInteger(CUR.rowIndex) && CUR.rowIndex >= 0 ? c.rows[CUR.rowIndex] : findRow(c, CUR.code);
   return row ? {c: c, r: row} : null;
 }
-function openSell(code){
+function openSell(code, rowIndex){
   if (!can('sell')) return;
-  const c = S.cats[S.active];
-  const row = c && findRow(c, code);
+  const cat = S.active, c = S.cats[cat];
+  const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : c && findRow(c, code);
   if (!row){ toast(t('badFormat')); return; }
-  CUR = {cat: S.active, code: String(code)};
+  CUR = {cat: cat, code: String(code), rowIndex: c.rows.indexOf(row)};
   const f = facts(c, row);
   openDlg(
     '<h3>' + esc(t('sell')) + '</h3><div class="dsub">' + esc(f.name || t('nameNA')) + ' · <span class="code">' + esc(f.code) + '</span></div>' +
@@ -1370,12 +1370,12 @@ function openSell(code){
   );
   setTimeout(() => { const el = $('dQty'); if (el) el.focus(); }, 60);
 }
-function openRate(code){
+function openRate(code, rowIndex){
   if (!can('rate')) return;
-  const c = S.cats[S.active];
-  const row = c && findRow(c, code);
+  const cat = S.active, c = S.cats[cat];
+  const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : c && findRow(c, code);
   if (!row){ toast(t('badFormat')); return; }
-  CUR = {cat: S.active, code: String(code)};
+  CUR = {cat: cat, code: String(code), rowIndex: c.rows.indexOf(row)};
   const f = facts(c, row), rf = f.rf;
   openDlg(
     '<h3>' + esc(t('rateTitle')) + '</h3><div class="dsub">' + esc(f.name || t('nameNA')) + ' · <span class="code">' + esc(f.code) + '</span></div>' +
@@ -1400,7 +1400,7 @@ async function submitSale(){
   if (!qty || qty <= 0){ setDStat('bad', t('qtyBad')); return; }
   const f = facts(cur.c, cur.r);
   if (f.stock !== null && qty > f.stock && !confirm(t('confirmStock') + ': ' + fmt(f.stock) + '. ' + fmt(qty) + ' ' + t('confirmQ'))) return;
-  const op = {id: uid(), type: 'sale', cat: S.active, code: CUR.code, qty: qty, sent: false, failed: false, attempts: 0};
+  const op = {id: uid(), type: 'sale', cat: CUR.cat, code: CUR.code, rowIndex: CUR.rowIndex, qty: qty, sent: false, failed: false, attempts: 0};
   S.queue.push(op);
   applySaleLocal(cur.c, CUR.code, qty);
   fixRemarkRow(S.active, cur.r);
@@ -1436,8 +1436,8 @@ async function submitRates(){
   });
   if (bad){ setDStat('bad', t('onlyNum')); return; }
   if (!changes.length){ setDStat('bad', t('noChange')); return; }
-  const ops = changes.map(ch => ({id: uid(), type: 'rate', cat: S.active, code: CUR.code, field: ch.field, value: ch.value, sent: false, failed: false, attempts: 0}));
-  ops.forEach(op => { S.queue.push(op); setLocal(cur.c, CUR.code, op.field, op.value); });
+  const ops = changes.map(ch => ({id: uid(), type: 'rate', cat: CUR.cat, code: CUR.code, rowIndex: CUR.rowIndex, field: ch.field, value: ch.value, sent: false, failed: false, attempts: 0}));
+  ops.forEach(op => { S.queue.push(op); if (Number.isInteger(CUR.rowIndex) && cur.c.rows[CUR.rowIndex]) { const ix = colIdx(cur.c, op.field); if (ix >= 0) cur.c.rows[CUR.rowIndex][ix] = String(op.value); } else setLocal(cur.c, CUR.code, op.field, op.value); });
   save();
   const go = $('dGo'); if (go) go.disabled = true;
   setDStat('wait', t('savingSheet'));
@@ -1479,8 +1479,8 @@ document.addEventListener('click', e => {
       else { const row = a.closest('tr').nextElementSibling; row.hidden = !row.hidden; a.classList.toggle('open', !row.hidden); }
       return;
     }
-    if (act === 'sell') openSell(code);
-    else if (act === 'rate') openRate(code);
+    if (act === 'sell') openSell(code, a.dataset.rowIndex === undefined ? undefined : Number(a.dataset.rowIndex));
+    else if (act === 'rate') openRate(code, a.dataset.rowIndex === undefined ? undefined : Number(a.dataset.rowIndex));
     else if (act === 'retry') retryOp(a.dataset.id);
     else if (act === 'discard') discardOp(a.dataset.id);
     else if (act === 'syncNow'){ if (can('sell')) syncSales(); }
