@@ -444,8 +444,8 @@ tr.drow .detbox{margin-top:0;padding-top:0;border-top:none;grid-template-columns
         <div class="card set-card">
           <h3 data-t="sheetSec"></h3>
           <div class="sub" data-t="linkHelp"></div>
-          <label class="fl"><span data-t="link"></span><input class="inp" id="url" type="url" placeholder="https://docs.google.com/.../pub?output=csv"></label>
-          <label class="fl"><span data-t="tab"></span><input class="inp" id="tab" type="text" placeholder="Inventory"></label>
+          <label class="fl"><span data-t="link"></span><input class="inp" id="url" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <label class="fl"><span data-t="tab"></span><input class="inp" id="tab" type="text" placeholder="Sanitary"></label>
           <div class="row2" style="margin-top:12px">
             <button class="btn sec2" id="testConn" type="button" data-t="testConn"></button>
             <button class="btn" id="saveUrl" type="button" data-t="saveLink"></button>
@@ -596,7 +596,7 @@ const T = {
   discardQ:'এই আপডেটটি বাতিল করবেন? Google Sheet-এ এটি লেখা হবে না।', sale:'বিক্রি', rateUpd:'রেট', attempts:'চেষ্টা',
   lastErr:'শেষ ত্রুটি', upload:'CSV আপলোড', csvHelp:'Excel থেকে CSV (UTF-8) হিসেবে সেভ করে ফাইল বাছাই করুন, অথবা কপি-পেস্ট করুন।',
   catName:'ক্যাটাগরির নাম (যেমন Hardware)', pick:'CSV ফাইল বাছাই', paste:'Excel থেকে কপি-পেস্ট', load:'লোড করুন',
-  sheetSec:'Google Sheet সংযোগ', link:'Sheet লিংক (CSV)', tab:'শীটের ট্যাব নাম', linkHelp:'Sheet → File → Share → Publish to web → CSV → Publish, তারপর লিংক দিন।',
+  sheetSec:'Google Sheet সংযোগ', link:'Google Sheet Workbook লিংক', tab:'যে Tab আপলোড করবেন', linkHelp:'পুরো Google Sheet লিংক দিন এবং নির্দিষ্ট Tab-এর নাম লিখুন। শুধু সেই Tab-এর ডেটা লোড হবে। Sheet-টি Anyone with the link – Viewer অথবা Publish to web করতে হবে।',
   saveLink:'সেভ ও আপডেট', testConn:'সংযোগ পরীক্ষা', autoLbl:'অটো আপডেট', autoOff:'বন্ধ',
   salesSec:'বিক্রি ও রেট সিঙ্ক', salesUrl:'Apps Script URL', salesHelp:'Apps Script ওয়েব অ্যাপের URL। এটি গোপন রাখুন।', saveSalesUrl:'সেভ করুন',
   accessSec:'অ্যাক্সেস ও PIN', accessHint:'PIN কমপক্ষে ৪ সংখ্যা। খালি রাখলে আগের PIN থাকবে।', adminNew:'অ্যাডমিন PIN বদলান',
@@ -826,13 +826,28 @@ function setNetPill(){
   pill.className = 'netpill ' + cls;
   $('netTxt').textContent = txt;
 }
+function sheetFetchUrl(raw, tab){
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  // Accept a normal Google Sheets workbook URL and fetch only the named tab.
+  const match = value.match(/docs\\.google\\.com\\/spreadsheets\\/d\\/([a-zA-Z0-9_-]+)/);
+  if (match && !/\\/(pub|gviz)\\b/i.test(value)){
+    const sheet = String(tab || '').trim();
+    if (!sheet) throw new Error('শীটের ট্যাব নাম লিখুন (যেমন Sanitary)');
+    return 'https://docs.google.com/spreadsheets/d/' + match[1] +
+      '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(sheet);
+  }
+  // Published CSV or an already prepared gviz URL is used as supplied.
+  return value;
+}
 async function refreshCat(name){
   const c = S.cats[name];
   if (!c || !c.url) return 'nourl';
   if (!navigator.onLine) return 'offline';
   try {
-    const sep = c.url.indexOf('?') >= 0 ? '&' : '?';
-    const res = await fetch(c.url + sep + 't=' + Date.now(), {cache: 'no-store'});
+    const sourceUrl = sheetFetchUrl(c.url, c.tab);
+    const sep = sourceUrl.indexOf('?') >= 0 ? '&' : '?';
+    const res = await fetch(sourceUrl + sep + 't=' + Date.now(), {cache: 'no-store'});
     if (!res.ok) throw new Error('http ' + res.status);
     const tb = parseTable(await res.text());
     if (!tb) return 'bad';
@@ -1408,7 +1423,8 @@ $('testConn').onclick = async () => {
   if (!u || u.indexOf('http') !== 0){ $('connRes').textContent = t('noLink'); return; }
   $('connRes').textContent = '…';
   try {
-    const res = await fetch(u + (u.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), {cache: 'no-store'});
+    const sourceUrl = sheetFetchUrl(u, $('tab').value.trim() || (c && c.tab) || S.active);
+    const res = await fetch(sourceUrl + (sourceUrl.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), {cache: 'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const tb = parseTable(await res.text());
     if (!tb) throw new Error('no data');
