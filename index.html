@@ -1623,8 +1623,8 @@ document.addEventListener('click', e => {
 /* Lock / login */
 function showLock(needsSetup){
   $('lock').classList.remove('hide');
-  $('loginPane').hidden = !needsSetup;
-  $('setupPane').hidden = !!needsSetup;
+  $('loginPane').hidden = !!needsSetup;
+  $('setupPane').hidden = !needsSetup;
   paintRoles();
 }
 function paintRoles(){
