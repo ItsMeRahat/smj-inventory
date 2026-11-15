@@ -710,7 +710,7 @@ const T = {
   nameCol:'নামের কলাম', priceCol:'ক্রয় রেটের কলাম', none:'— নেই —', showCols:'দেখাতে চাইলে টিক দিন', saveCols:'কলাম সেভ',
   delCat:'এই ক্যাটাগরি মুছুন', confirmDel:'ক্যাটাগরি মুছে যাবে। নিশ্চিত?', open:'খুলুন', roleLbl:'রোল', langLbl:'ভাষা', logout:'লগআউট',
   lockTitle:'প্রবেশ করুন', roleAdmin:'অ্যাডমিন', rolePartner:'পার্টনার', roleStaff:'স্টাফ', pinLbl:'PIN', signin:'প্রবেশ করুন',
-  setupHint:'প্রথমবার সেটআপ। অ্যাডমিন PIN দিন (কমপক্ষে ৪ সংখ্যা)। পার্টনার ও স্টাফ PIN ঐচ্ছিক।',
+  setupHint:'প্রথমবার সেটআপ। Admin, Partner ও Staff—তিনটি PIN-ই ৪–১২ সংখ্যার হতে হবে.',
   adminPinLbl:'অ্যাডমিন PIN', confirmPinLbl:'অ্যাডমিন PIN আবার লিখুন', partnerPinLbl:'পার্টনার PIN (ঐচ্ছিক)', staffPinLbl:'স্টাফ PIN (ঐচ্ছিক)',
   create:'সেটআপ শেষ করুন', wrongPin:'PIN ভুল', pinShort:'কমপক্ষে ৪ সংখ্যার PIN দিন', pinMismatch:'দুটি PIN মিলছে না',
   roleNotSet:'এই রোলের PIN এখনো সেট নেই', welcome:'স্বাগতম', logoutDone:'লগআউট হয়েছে',
@@ -753,7 +753,7 @@ const T = {
   nameCol:'Name column', priceCol:'Purchase rate column', none:'— None —', showCols:'Tick the fields to show', saveCols:'Save fields',
   delCat:'Delete this category', confirmDel:'Delete this category?', open:'Open', roleLbl:'Role', langLbl:'Language', logout:'Sign out',
   lockTitle:'Sign in', roleAdmin:'Admin', rolePartner:'Partner', roleStaff:'Staff', pinLbl:'PIN', signin:'Sign in',
-  setupHint:'First-time setup. Set an admin PIN (at least 4 digits). Partner and staff PINs are optional.',
+  setupHint:'First-time setup. All three PINs (Admin, Partner and Staff) are required and must be 4–12 digits.',
   adminPinLbl:'Admin PIN', confirmPinLbl:'Confirm admin PIN', partnerPinLbl:'Partner PIN (optional)', staffPinLbl:'Staff PIN (optional)',
   create:'Finish setup', wrongPin:'Wrong PIN', pinShort:'PIN must be at least 4 digits', pinMismatch:'The PINs do not match',
   roleNotSet:'No PIN set for this role yet', welcome:'Welcome', logoutDone:'Signed out',
@@ -1655,7 +1655,7 @@ async function setupDone(){
 }
 async function logout(){
   try { if (S.authToken) await authRequest('logout', {token:S.authToken}); } catch(e){}
-  S.session = ''; S.authToken = ''; save(); closeDlg(); closeMore(); showLock(true); toast(t('logoutDone'));
+  S.session = ''; S.authToken = ''; save(); closeDlg(); closeMore(); showLock(false); toast(t('logoutDone'));
 }
 $('roles').addEventListener('click', e => {
   const b = e.target.closest('[data-role]'); if (!b) return;
