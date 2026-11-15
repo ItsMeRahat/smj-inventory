@@ -1028,9 +1028,14 @@ async function syncSales(){
     const payload = {
       action: 'sync', token: S.authToken,
       sheet: (c && c.tab) || cat,
-      items: items.map(q => q.type === 'rate'
-        ? {id: q.id, type: 'rate', code: q.code, field: q.field, value: q.value}
-        : {id: q.id, type: 'sale', code: q.code, qty: q.qty})
+      items: items.map(q => {
+        const catData = S.cats[cat];
+        const row = catData && Number.isInteger(q.rowIndex) ? catData.rows[q.rowIndex] : null;
+        const itemName = row && catData.cfg ? String(row[catData.cfg.title] || '').trim() : '';
+        return q.type === 'rate'
+          ? {id: q.id, type: 'rate', code: String(q.code || '').trim(), rowIndex: q.rowIndex, itemName: itemName, field: q.field, value: q.value}
+          : {id: q.id, type: 'sale', code: String(q.code || '').trim(), rowIndex: q.rowIndex, itemName: itemName, qty: q.qty};
+      })
     };
     items.forEach(q => { q.attempts = (q.attempts || 0) + 1; });
     try {
