@@ -1482,7 +1482,7 @@ async function submitRates(){
   await syncSales();
   const left = ops.map(o => S.queue.find(q => q.id === o.id)).filter(Boolean);
   if (!left.length){ toast(t('savedSheet')); closeDlg(); }
-  else if (left.some(q => q.failed)){ setDStat('bad', t('failedSheet')); if (go) go.disabled = false; }
+  else if (left.some(q => q.failed)){ const detail = left.map(q => q.err).filter(Boolean).join(' · '); setDStat('bad', t('failedSheet') + (detail ? ' (' + detail + ')' : '')); if (go) go.disabled = false; }
   else { setDStat('pend', t('pendingSheet')); if (go) go.disabled = false; }
   renderAll();
 }
