@@ -795,10 +795,26 @@ function toast(m){
 function hash(s){ let h = 5381; const x = 'smj:' + String(s); for (let i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) | 0; return String(h >>> 0); }
 function role(){ return S.session || ''; }
 async function authRequest(action, payload){
-  const res = await fetch(AUTH_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(Object.assign({action:action}, payload || {}))});
-  const data = await res.json();
-  if (!data || !data.ok) throw new Error((data && data.error) || 'Authentication request failed');
-  return data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(AUTH_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify(Object.assign({action:action}, payload || {})),
+      signal:controller.signal,
+      cache:'no-store'
+    });
+    if (!res.ok) throw new Error('Server HTTP ' + res.status);
+    const data = await res.json();
+    if (!data || data.ok !== true) throw new Error((data && data.error) || 'Authentication request failed');
+    return data;
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('Server response timeout. Check Apps Script deployment and try again.');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 function can(a){
   const r = role();
@@ -1652,11 +1668,12 @@ async function login(r, pin){
   if (btn.disabled) return;
   const cleanPin = String(pin || '').trim();
   if (!/^\d{4,12}$/.test(cleanPin)){
-    toast(t('pinShort'));
+    toast('কমপক্ষে ৪ সংখ্যার PIN দিন');
     $('pin').focus();
     return;
   }
   btn.disabled = true;
+  btn.textContent = 'যাচাই হচ্ছে…';
   try {
     const data = await authRequest('login', {role:r, pin:cleanPin});
     if (!data.token || data.role !== r) throw new Error('Invalid authentication response');
@@ -1694,7 +1711,13 @@ async function logout(){
 }
 $('roles').addEventListener('click', e => {
   const b = e.target.closest('[data-role]'); if (!b || roleLinkMode) return;
-  selRole = b.dataset.role; paintRoles();
+  if (selRole !== b.dataset.role) {
+    selRole = b.dataset.role;
+    $('pin').value = '';
+    $('pin').type = 'password';
+    paintRoles();
+    $('pin').focus();
+  }
 });
 $('loginBtn').onclick = () => login(selRole, $('pin').value.trim());
 $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') login(selRole, $('pin').value.trim()); });
