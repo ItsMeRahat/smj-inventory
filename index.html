@@ -630,6 +630,15 @@ tr.drow .detbox{margin-top:0;padding-top:0;border-top:none;grid-template-columns
       </div>
       <label class="fl"><span data-t="pinLbl"></span><input class="inp" id="pin" type="password" inputmode="numeric" autocomplete="off"></label>
       <button class="btn" id="loginBtn" type="button" data-t="signin"></button>
+      <button type="button" id="forgotAdminBtn" class="linkish" style="display:block;margin:14px auto 0;background:none;border:0;color:var(--blue);font-weight:700;padding:8px 12px">Forgot Admin PIN? / এডমিন PIN ভুলে গেছেন?</button>
+    </div>
+    <div id="recoveryPane" hidden>
+      <div class="hint">Admin Recovery Code দিয়ে নতুন PIN সেট করুন। Recovery Code ছাড়া এই প্রক্রিয়া সম্পন্ন হবে না।</div>
+      <label class="fl"><span>Recovery Code</span><input class="inp" id="recoveryCode" type="password" autocomplete="off" autocapitalize="characters"></label>
+      <label class="fl"><span>New Admin PIN (4–12 digits)</span><input class="inp" id="recoveryPin" type="password" inputmode="numeric" autocomplete="new-password"></label>
+      <label class="fl"><span>Confirm New Admin PIN</span><input class="inp" id="recoveryPinConfirm" type="password" inputmode="numeric" autocomplete="new-password"></label>
+      <button class="btn" id="recoverAdminBtn" type="button">Reset Admin PIN</button>
+      <button type="button" id="cancelRecoveryBtn" class="linkish" style="display:block;margin:12px auto 0;background:none;border:0;color:var(--mut);font-weight:700;padding:8px 12px">Back to Login</button>
     </div>
     <div id="setupPane" hidden>
       <div class="hint" data-t="setupHint"></div>
@@ -1652,6 +1661,8 @@ function showLock(needsSetup){
   const setupVisible = !!needsSetup && canInitialize;
   $('loginPane').hidden = setupVisible;
   $('setupPane').hidden = !setupVisible;
+  $('recoveryPane').hidden = true;
+  $('forgotAdminBtn').hidden = !!roleLinkMode || forcedRole === 'staff' || forcedRole === 'partner';
   paintRoles();
 }
 function paintRoles(){
@@ -1722,6 +1733,44 @@ $('roles').addEventListener('click', e => {
 $('loginBtn').onclick = () => login(selRole, $('pin').value.trim());
 $('pin').addEventListener('keydown', e => { if (e.key === 'Enter') login(selRole, $('pin').value.trim()); });
 $('setupBtn').onclick = setupDone;
+$('forgotAdminBtn').onclick = () => {
+  if (roleLinkMode || forcedRole === 'staff' || forcedRole === 'partner') return;
+  $('loginPane').hidden = true;
+  $('setupPane').hidden = true;
+  $('recoveryPane').hidden = false;
+  $('recoveryCode').value = '';
+  $('recoveryPin').value = '';
+  $('recoveryPinConfirm').value = '';
+  $('recoveryCode').focus();
+};
+$('cancelRecoveryBtn').onclick = () => {
+  $('recoveryPane').hidden = true;
+  $('loginPane').hidden = false;
+  $('recoveryCode').value = '';
+  $('recoveryPin').value = '';
+  $('recoveryPinConfirm').value = '';
+};
+$('recoverAdminBtn').onclick = async () => {
+  const code = $('recoveryCode').value.trim().replace(/\s+/g,'').toUpperCase();
+  const pin = $('recoveryPin').value.trim();
+  const confirmPin = $('recoveryPinConfirm').value.trim();
+  const btn = $('recoverAdminBtn');
+  if (!code){ toast('Recovery Code দিন'); return; }
+  if (!/^\d{4,12}$/.test(pin)){ toast('নতুন PIN ৪–১২ সংখ্যার হতে হবে'); return; }
+  if (pin !== confirmPin){ toast('দুটি PIN মিলছে না'); return; }
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = 'যাচাই হচ্ছে…';
+  try {
+    await authRequest('recoverAdminPin', {recoveryCode:code, newPin:pin});
+    S.session = ''; S.authToken = ''; save();
+    $('recoveryCode').value = ''; $('recoveryPin').value = ''; $('recoveryPinConfirm').value = '';
+    $('recoveryPane').hidden = true; $('loginPane').hidden = false;
+    $('pin').value = ''; selRole = 'admin'; paintRoles();
+    toast('Admin PIN পরিবর্তন হয়েছে। নতুন PIN দিয়ে Login করুন।');
+  } catch(e){ toast(e.message || 'Admin recovery failed'); }
+  finally { btn.disabled = false; btn.textContent = 'Reset Admin PIN'; }
+};
 $('logoutBtn') && $('logoutBtn').addEventListener('click', logout);
 
 MQ.addEventListener && MQ.addEventListener('change', () => renderAll());
