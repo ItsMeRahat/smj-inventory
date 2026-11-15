@@ -648,6 +648,7 @@ tr.drow .detbox{margin-top:0;padding-top:0;border-top:none;grid-template-columns
 const SEED = {headers: [], rows: []};  // no bundled business data; sheet/CSV is the source
 const $ = id => document.getElementById(id);
 const KEY = 'smj_inv_v8', LIMIT = 150;
+const AUTH_URL = 'https://script.google.com/macros/s/AKfycbxuoI7xJS4XGHDeduRgFmW9eFXWRAWi4CE8g3ezfKh_PEXGNB0M2tMP0of3UY8N48mM1Q/exec';
 try { localStorage.removeItem('smj_inv_v1'); } catch(e){}  // clear previously saved data on this device
 const MQ = window.matchMedia('(min-width: 900px)');
 
@@ -773,7 +774,7 @@ let stockF = 'all';
 let S = load(), HITS = [], selRole = 'admin', CUR = null, syncing = false, page = 'dashboard', view = 'grid', sortKey = 'seq', sortDir = 1, loading = false;
 
 function load(){
-  const base = {active:'Sanitary', cats:{}, queue:[], salesUrl:'', seeded:false, lang:'bn', last:'', pins:{}, session:'', staffPurchase:false, auto:0, side:false, lastAuto:0};
+  const base = {active:'Sanitary', cats:{}, queue:[], salesUrl:AUTH_URL, seeded:false, lang:'bn', last:'', pins:{}, session:'', authToken:'', staffPurchase:false, auto:0, side:false, lastAuto:0};
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (s && s.cats){ const m = Object.assign(base, s); m.pins = m.pins || {}; m.queue = m.queue || []; return m; }
@@ -791,6 +792,12 @@ function toast(m){
 }
 function hash(s){ let h = 5381; const x = 'smj:' + String(s); for (let i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) | 0; return String(h >>> 0); }
 function role(){ return S.session || ''; }
+async function authRequest(action, payload){
+  const res = await fetch(AUTH_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(Object.assign({action:action}, payload || {}))});
+  const data = await res.json();
+  if (!data || !data.ok) throw new Error((data && data.error) || 'Authentication request failed');
+  return data;
+}
 function can(a){
   const r = role();
   if (r === 'admin') return true;
@@ -984,13 +991,15 @@ async function syncSales(){
   if (syncing) return;
   const due = pendingOps();
   if (!due.length){ renderAll(); return; }
-  if (!S.salesUrl || !navigator.onLine){ renderAll(); return; }
+  if (!S.authToken){ renderAll(); return; }
+  if (!navigator.onLine){ renderAll(); return; }
   syncing = true; renderAll();
   const cats = [...new Set(due.map(q => q.cat))];
   for (const cat of cats){
     const items = due.filter(q => q.cat === cat);
     const c = S.cats[cat];
     const payload = {
+      action: 'sync', token: S.authToken,
       sheet: (c && c.tab) || cat,
       items: items.map(q => q.type === 'rate'
         ? {id: q.id, type: 'rate', code: q.code, field: q.field, value: q.value}
@@ -998,7 +1007,7 @@ async function syncSales(){
     };
     items.forEach(q => { q.attempts = (q.attempts || 0) + 1; });
     try {
-      const res = await fetch(S.salesUrl, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(payload)});
+      const res = await fetch(AUTH_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(payload)});
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'server error');
       const map = {};
@@ -1289,7 +1298,8 @@ function renderSettings(){
   const c = S.cats[S.active];
   if (!$('catName').value && c) $('catName').value = S.active;
   if (c && document.activeElement !== $('url')){ $('url').value = c.url || ''; $('tab').value = c.tab || S.active; }
-  $('salesUrl').value = S.salesUrl || '';
+  $('salesUrl').value = AUTH_URL;
+  $('salesUrl').readOnly = true;
   $('staffPur').checked = !!S.staffPurchase;
   $('autoSel').value = String(S.auto || 0);
   if (c){
@@ -1552,20 +1562,15 @@ $('saveUrl').onclick = () => {
   refreshNames([name], false);
 };
 $('autoSel').onchange = () => { S.auto = +$('autoSel').value; S.lastAuto = Date.now(); save(); toast(S.auto ? 'Auto: ' + S.auto + ' min' : t('autoOff')); };
-$('saveSalesUrl').onclick = () => {
-  const u = $('salesUrl').value.trim();
-  if (u && u.indexOf('http') !== 0){ toast('URL?'); return; }
-  S.salesUrl = u; save(); toast(t('savedUrl')); syncSales();
-};
+$('saveSalesUrl').hidden = true;
 $('staffPur').onchange = () => { S.staffPurchase = $('staffPur').checked; save(); renderAll(); toast(t('savedAccess')); };
-$('saveAccess').onclick = () => {
-  const a = $('pinAdmin').value.trim(), p = $('pinPartner').value.trim(), s = $('pinStaff').value.trim();
-  if ((a && a.length < 4) || (p && p.length < 4) || (s && s.length < 4)){ toast(t('pinShort')); return; }
-  if (a) S.pins.admin = hash(a);
-  if (p) S.pins.partner = hash(p);
-  if (s) S.pins.staff = hash(s);
-  $('pinAdmin').value = ''; $('pinPartner').value = ''; $('pinStaff').value = '';
-  save(); renderAll(); toast(t('savedAccess'));
+$('saveAccess').onclick = async () => {
+  const pins = {admin:$('pinAdmin').value.trim(), partner:$('pinPartner').value.trim(), staff:$('pinStaff').value.trim()};
+  if (!pins.admin && !pins.partner && !pins.staff){ toast(t('pinShort')); return; }
+  for (const k of Object.keys(pins)) if (pins[k] && !/^\\d{4,12}$/.test(pins[k])){ toast(t('pinShort')); return; }
+  try { await authRequest('changePins', {token:S.authToken, pins:pins});
+    $('pinAdmin').value=''; $('pinPartner').value=''; $('pinStaff').value=''; toast(t('savedAccess'));
+  } catch(e){ toast(e.message); }
 };
 $('file').onchange = e => {
   const f = e.target.files[0]; e.target.value = '';
@@ -1616,11 +1621,10 @@ document.addEventListener('click', e => {
 });
 
 /* Lock / login */
-function showLock(){
-  const hasAdmin = !!S.pins.admin;
+function showLock(needsSetup){
   $('lock').classList.remove('hide');
-  $('loginPane').hidden = !hasAdmin;
-  $('setupPane').hidden = hasAdmin;
+  $('loginPane').hidden = !needsSetup;
+  $('setupPane').hidden = !!needsSetup;
   paintRoles();
 }
 function paintRoles(){
@@ -1631,24 +1635,27 @@ function paintRoles(){
   });
 }
 function unlock(){ $('lock').classList.add('hide'); $('pin').value = ''; renderAll(); }
-function login(r, pin){
-  if (!S.pins[r]){ toast(t('roleNotSet')); return; }
-  if (S.pins[r] !== hash(pin)){ toast(t('wrongPin')); return; }
-  S.session = r; page = r === 'staff' ? 'inventory' : 'dashboard'; save(); unlock(); toast(t('welcome'));
+async function login(r, pin){
+  try {
+    const data = await authRequest('login', {role:r, pin:pin});
+    S.session = data.role; S.authToken = data.token; page = r === 'staff' ? 'inventory' : 'dashboard'; save(); unlock(); toast(t('welcome'));
+    if (navigator.onLine) syncSales();
+  } catch(e){ toast(e.message || t('wrongPin')); }
 }
-function setupDone(){
+async function setupDone(){
   const a = $('setA').value.trim(), b = $('setB').value.trim();
-  if (a.length < 4){ toast(t('pinShort')); return; }
-  if (a !== b){ toast(t('pinMismatch')); return; }
   const p = $('setP').value.trim(), s = $('setS').value.trim();
-  if ((p && p.length < 4) || (s && s.length < 4)){ toast(t('pinShort')); return; }
-  S.pins.admin = hash(a);
-  if (p) S.pins.partner = hash(p);
-  if (s) S.pins.staff = hash(s);
-  S.session = 'admin'; page = 'dashboard'; save(); unlock(); toast(t('welcome'));
+  if (!/^\\d{4,12}$/.test(a) || !/^\\d{4,12}$/.test(p) || !/^\\d{4,12}$/.test(s)){ toast(t('pinShort') + ' (Admin, Partner, Staff)'); return; }
+  if (a !== b){ toast(t('pinMismatch')); return; }
+  try {
+    const data = await authRequest('setup', {pins:{admin:a,partner:p,staff:s}});
+    S.session = 'admin'; S.authToken = data.token; page='dashboard';
+    ['setA','setB','setP','setS'].forEach(id => $(id).value=''); save(); unlock(); toast(t('welcome'));
+  } catch(e){ toast(e.message); }
 }
-function logout(){
-  S.session = ''; save(); closeDlg(); closeMore(); showLock(); toast(t('logoutDone'));
+async function logout(){
+  try { if (S.authToken) await authRequest('logout', {token:S.authToken}); } catch(e){}
+  S.session = ''; S.authToken = ''; save(); closeDlg(); closeMore(); showLock(true); toast(t('logoutDone'));
 }
 $('roles').addEventListener('click', e => {
   const b = e.target.closest('[data-role]'); if (!b) return;
@@ -1682,7 +1689,7 @@ function applyLang(){
   renderAll();
 }
 
-(function init(){
+(async function init(){
   if (!S.seeded){
     if (SEED.rows.length && !S.cats.Sanitary) S.cats.Sanitary = mkCat(SEED.headers, SEED.rows, '', 'Inventory');
     S.seeded = true;
@@ -1692,11 +1699,15 @@ function applyLang(){
   if (!S.cats[S.active]) S.active = Object.keys(S.cats)[0] || '';
   save();
   applyLang();
-  if (!S.pins.admin || !role()){ showLock(); }
-  else {
-    unlock();
-    if (navigator.onLine && Object.keys(S.cats).length){ refreshNames(Object.keys(S.cats), true); syncSales(); }
-  }
+  S.session = ''; // Never trust a role saved only on this device.
+  try {
+    const status = await authRequest('status');
+    if (S.authToken) {
+      const valid = await authRequest('validate', {token:S.authToken});
+      S.session = valid.role; unlock();
+      if (navigator.onLine && Object.keys(S.cats).length){ refreshNames(Object.keys(S.cats), true); syncSales(); }
+    } else showLock(!status.initialized);
+  } catch(e) { S.session=''; S.authToken=''; save(); showLock(false); toast('Server connection failed. Check internet or Apps Script deployment.'); }
   setInterval(() => {
     if (!role() || !S.auto || document.hidden || !navigator.onLine) return;
     if (Date.now() - (S.lastAuto || 0) < S.auto * 60000) return;
