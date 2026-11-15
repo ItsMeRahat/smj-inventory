@@ -1434,12 +1434,18 @@ $('testConn').onclick = async () => {
   }
 };
 $('saveUrl').onclick = () => {
-  const c = S.cats[S.active];
-  if (!c){ toast(t('nameNeed')); return; }
   const u = $('url').value.trim();
-  if (u && u.indexOf('http') !== 0){ toast('URL?'); return; }
-  c.url = u; c.tab = $('tab').value.trim() || S.active;
-  save(); refreshNames([S.active], false);
+  const name = ($('catName').value || S.active || '').trim();
+  const tab = $('tab').value.trim() || name;
+  if (!name){ toast(t('nameNeed')); $('catName').focus(); return; }
+  if (!u || u.indexOf('http') !== 0){ toast('Google Sheet URL দিন'); $('url').focus(); return; }
+  if (!tab){ toast('শীটের Tab নাম লিখুন'); $('tab').focus(); return; }
+  let c = S.cats[name];
+  if (!c) c = S.cats[name] = mkCat([], [], u, tab);
+  c.url = u; c.tab = tab;
+  S.active = name;
+  save(); renderAll();
+  refreshNames([name], false);
 };
 $('autoSel').onchange = () => { S.auto = +$('autoSel').value; S.lastAuto = Date.now(); save(); toast(S.auto ? 'Auto: ' + S.auto + ' min' : t('autoOff')); };
 $('saveSalesUrl').onclick = () => {
