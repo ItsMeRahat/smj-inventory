@@ -770,8 +770,10 @@ function locale(){ return S.lang === 'bn' ? 'bn-BD' : 'en-US'; }
 function fmt(n, d){ return Number(n).toLocaleString(locale(), {maximumFractionDigits: d || 0, minimumFractionDigits: 0}); }
 function money(n, d){ return '৳' + fmt(n, d == null ? 0 : d); }
 
+const forcedRole = (new URLSearchParams(window.location.search).get('role') || '').toLowerCase();
+const roleLinkMode = ['staff','partner'].includes(forcedRole) ? forcedRole : '';
 let stockF = 'all';
-let S = load(), HITS = [], selRole = 'admin', CUR = null, syncing = false, page = 'dashboard', view = 'grid', sortKey = 'seq', sortDir = 1, loading = false;
+let S = load(), HITS = [], selRole = roleLinkMode || (forcedRole === 'admin' ? 'admin' : 'admin'), CUR = null, syncing = false, page = 'dashboard', view = 'grid', sortKey = 'seq', sortDir = 1, loading = false;
 
 function load(){
   const base = {active:'Sanitary', cats:{}, queue:[], salesUrl:AUTH_URL, seeded:false, lang:'bn', last:'', pins:{}, session:'', authToken:'', staffPurchase:false, auto:0, side:false, lastAuto:0};
@@ -1623,13 +1625,16 @@ document.addEventListener('click', e => {
 /* Lock / login */
 function showLock(needsSetup){
   $('lock').classList.remove('hide');
-  $('loginPane').hidden = !!needsSetup;
-  $('setupPane').hidden = !needsSetup;
+  const canInitialize = !roleLinkMode && !forcedRole || forcedRole === 'admin';
+  const setupVisible = !!needsSetup && canInitialize;
+  $('loginPane').hidden = setupVisible;
+  $('setupPane').hidden = !setupVisible;
   paintRoles();
 }
 function paintRoles(){
   document.querySelectorAll('#roles button').forEach(b => {
     const r = b.dataset.role;
+    b.hidden = !!roleLinkMode && r !== roleLinkMode;
     b.textContent = t('role' + r.charAt(0).toUpperCase() + r.slice(1));
     b.classList.toggle('on', r === selRole);
   });
@@ -1658,7 +1663,7 @@ async function logout(){
   S.session = ''; S.authToken = ''; save(); closeDlg(); closeMore(); showLock(false); toast(t('logoutDone'));
 }
 $('roles').addEventListener('click', e => {
-  const b = e.target.closest('[data-role]'); if (!b) return;
+  const b = e.target.closest('[data-role]'); if (!b || roleLinkMode) return;
   selRole = b.dataset.role; paintRoles();
 });
 $('loginBtn').onclick = () => login(selRole, $('pin').value.trim());
@@ -1706,7 +1711,10 @@ function applyLang(){
       const valid = await authRequest('validate', {token:S.authToken});
       S.session = valid.role; unlock();
       if (navigator.onLine && Object.keys(S.cats).length){ refreshNames(Object.keys(S.cats), true); syncSales(); }
-    } else showLock(!status.initialized);
+    } else {
+      showLock(!status.initialized);
+      if (!status.initialized && roleLinkMode) toast('Admin must complete the first setup before staff/partner login.');
+    }
   } catch(e) { S.session=''; S.authToken=''; save(); showLock(false); toast('Server connection failed. Check internet or Apps Script deployment.'); }
   setInterval(() => {
     if (!role() || !S.auto || document.hidden || !navigator.onLine) return;
