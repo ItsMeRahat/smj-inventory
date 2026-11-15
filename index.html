@@ -924,9 +924,12 @@ function fixRemarkRow(name, r){
   const want = wantRemark(num(r[si]), r[mi]);
   if (!want || r[mi] === want) return;
   const code = r[ci], field = c.headers[mi];
+  const rowIndex = c.rows.indexOf(r);
+  const itemNoIdx = colIdx(c, 'Item No.');
+  const itemNo = itemNoIdx >= 0 ? String(r[itemNoIdx] || '').trim() : '';
   const pend = S.queue.find(q => !q.sent && q.cat === name && q.code === code && q.field === field);
-  if (pend){ pend.value = want; pend.failed = false; }
-  else S.queue.push({id: uid(), type: 'rate', cat: name, code: code, field: field, value: want, sent: false, failed: false, attempts: 0});
+  if (pend){ pend.value = want; pend.failed = false; pend.rowIndex = rowIndex; pend.itemNo = itemNo; }
+  else S.queue.push({id: uid(), type: 'rate', cat: name, code: code, rowIndex: rowIndex, itemNo: itemNo, field: field, value: want, sent: false, failed: false, attempts: 0});
   r[mi] = want;
 }
 function sweepRemarks(name){ const c = S.cats[name]; if (c) c.rows.forEach(r => fixRemarkRow(name, r)); }
@@ -1032,9 +1035,12 @@ async function syncSales(){
         const catData = S.cats[cat];
         const row = catData && Number.isInteger(q.rowIndex) ? catData.rows[q.rowIndex] : null;
         const itemName = row && catData.cfg ? String(row[catData.cfg.title] || '').trim() : '';
+        const itemNoIdx = catData ? colIdx(catData, 'Item No.') : -1;
+        const itemNo = q.itemNo || (row && itemNoIdx >= 0 ? String(row[itemNoIdx] || '').trim() : '');
+        const rowData = row && catData ? Object.fromEntries(catData.headers.map((h, i) => [String(h).trim(), String(row[i] == null ? '' : row[i]).trim()])) : {};
         return q.type === 'rate'
-          ? {id: q.id, type: 'rate', code: String(q.code || '').trim(), rowIndex: q.rowIndex, itemName: itemName, field: q.field, value: q.value}
-          : {id: q.id, type: 'sale', code: String(q.code || '').trim(), rowIndex: q.rowIndex, itemName: itemName, qty: q.qty};
+          ? {id: q.id, type: 'rate', code: String(q.code || '').trim(), itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, field: q.field, value: q.value}
+          : {id: q.id, type: 'sale', code: String(q.code || '').trim(), itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, qty: q.qty};
       })
     };
     items.forEach(q => { q.attempts = (q.attempts || 0) + 1; });
