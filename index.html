@@ -710,8 +710,8 @@ const T = {
   nameCol:'নামের কলাম', priceCol:'ক্রয় রেটের কলাম', none:'— নেই —', showCols:'দেখাতে চাইলে টিক দিন', saveCols:'কলাম সেভ',
   delCat:'এই ক্যাটাগরি মুছুন', confirmDel:'ক্যাটাগরি মুছে যাবে। নিশ্চিত?', open:'খুলুন', roleLbl:'রোল', langLbl:'ভাষা', logout:'লগআউট',
   lockTitle:'প্রবেশ করুন', roleAdmin:'অ্যাডমিন', rolePartner:'পার্টনার', roleStaff:'স্টাফ', pinLbl:'PIN', signin:'প্রবেশ করুন',
-  setupHint:'প্রথমবার সেটআপ। Admin, Partner ও Staff—তিনটি PIN-ই ৪–১২ সংখ্যার হতে হবে.',
-  adminPinLbl:'অ্যাডমিন PIN', confirmPinLbl:'অ্যাডমিন PIN আবার লিখুন', partnerPinLbl:'পার্টনার PIN (ঐচ্ছিক)', staffPinLbl:'স্টাফ PIN (ঐচ্ছিক)',
+  setupHint:'প্রথমবার সেটআপ। Admin, Partner ও Staff—তিনটি PIN-ই বাধ্যতামূলক; প্রতিটি ৪–১২ সংখ্যার হতে হবে.',
+  adminPinLbl:'অ্যাডমিন PIN', confirmPinLbl:'অ্যাডমিন PIN আবার লিখুন', partnerPinLbl:'পার্টনার PIN', staffPinLbl:'স্টাফ PIN',
   create:'সেটআপ শেষ করুন', wrongPin:'PIN ভুল', pinShort:'কমপক্ষে ৪ সংখ্যার PIN দিন', pinMismatch:'দুটি PIN মিলছে না',
   roleNotSet:'এই রোলের PIN এখনো সেট নেই', welcome:'স্বাগতম', logoutDone:'লগআউট হয়েছে',
   nameNeed:'আগে ক্যাটাগরির নাম লিখুন', badFormat:'ডাটা পাওয়া যায়নি বা ফরম্যাট ভুল', loaded:'ক্যাটাগরি লোড হয়েছে',
@@ -753,8 +753,8 @@ const T = {
   nameCol:'Name column', priceCol:'Purchase rate column', none:'— None —', showCols:'Tick the fields to show', saveCols:'Save fields',
   delCat:'Delete this category', confirmDel:'Delete this category?', open:'Open', roleLbl:'Role', langLbl:'Language', logout:'Sign out',
   lockTitle:'Sign in', roleAdmin:'Admin', rolePartner:'Partner', roleStaff:'Staff', pinLbl:'PIN', signin:'Sign in',
-  setupHint:'First-time setup. All three PINs (Admin, Partner and Staff) are required and must be 4–12 digits.',
-  adminPinLbl:'Admin PIN', confirmPinLbl:'Confirm admin PIN', partnerPinLbl:'Partner PIN (optional)', staffPinLbl:'Staff PIN (optional)',
+  setupHint:'First-time setup. Admin, Partner and Staff PINs are all required and must each be 4–12 digits.',
+  adminPinLbl:'Admin PIN', confirmPinLbl:'Confirm admin PIN', partnerPinLbl:'Partner PIN', staffPinLbl:'Staff PIN',
   create:'Finish setup', wrongPin:'Wrong PIN', pinShort:'PIN must be at least 4 digits', pinMismatch:'The PINs do not match',
   roleNotSet:'No PIN set for this role yet', welcome:'Welcome', logoutDone:'Signed out',
   nameNeed:'Enter a category name first', badFormat:'No data found or wrong format', loaded:'Category loaded',
@@ -1569,7 +1569,7 @@ $('staffPur').onchange = () => { S.staffPurchase = $('staffPur').checked; save()
 $('saveAccess').onclick = async () => {
   const pins = {admin:$('pinAdmin').value.trim(), partner:$('pinPartner').value.trim(), staff:$('pinStaff').value.trim()};
   if (!pins.admin && !pins.partner && !pins.staff){ toast(t('pinShort')); return; }
-  for (const k of Object.keys(pins)) if (pins[k] && !/^\\d{4,12}$/.test(pins[k])){ toast(t('pinShort')); return; }
+  for (const k of Object.keys(pins)) if (pins[k] && !/^\d{4,12}$/.test(pins[k])){ toast(t('pinShort')); return; }
   try { await authRequest('changePins', {token:S.authToken, pins:pins});
     $('pinAdmin').value=''; $('pinPartner').value=''; $('pinStaff').value=''; toast(t('savedAccess'));
   } catch(e){ toast(e.message); }
@@ -1650,7 +1650,7 @@ async function login(r, pin){
 async function setupDone(){
   const a = $('setA').value.trim(), b = $('setB').value.trim();
   const p = $('setP').value.trim(), s = $('setS').value.trim();
-  if (!/^\\d{4,12}$/.test(a) || !/^\\d{4,12}$/.test(p) || !/^\\d{4,12}$/.test(s)){ toast(t('pinShort') + ' (Admin, Partner, Staff)'); return; }
+  if (!/^\d{4,12}$/.test(a) || !/^\d{4,12}$/.test(p) || !/^\d{4,12}$/.test(s)){ toast(t('pinShort') + ' (Admin, Partner, Staff)'); return; }
   if (a !== b){ toast(t('pinMismatch')); return; }
   try {
     const data = await authRequest('setup', {pins:{admin:a,partner:p,staff:s}});
