@@ -1641,11 +1641,34 @@ function paintRoles(){
 }
 function unlock(){ $('lock').classList.add('hide'); $('pin').value = ''; renderAll(); }
 async function login(r, pin){
+  const btn = $('loginBtn');
+  if (btn.disabled) return;
+  const cleanPin = String(pin || '').trim();
+  if (!/^\\d{4,12}$/.test(cleanPin)){
+    toast(t('pinShort'));
+    $('pin').focus();
+    return;
+  }
+  btn.disabled = true;
   try {
-    const data = await authRequest('login', {role:r, pin:pin});
-    S.session = data.role; S.authToken = data.token; page = r === 'staff' ? 'inventory' : 'dashboard'; save(); unlock(); toast(t('welcome'));
+    const data = await authRequest('login', {role:r, pin:cleanPin});
+    if (!data.token || data.role !== r) throw new Error('Invalid authentication response');
+    S.session = data.role;
+    S.authToken = data.token;
+    page = r === 'staff' ? 'inventory' : 'dashboard';
+    save();
+    unlock();
+    toast(t('welcome'));
     if (navigator.onLine) syncSales();
-  } catch(e){ toast(e.message || t('wrongPin')); }
+  } catch(e){
+    S.session = '';
+    S.authToken = '';
+    save();
+    toast(e.message || t('wrongPin'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('signin');
+  }
 }
 async function setupDone(){
   const a = $('setA').value.trim(), b = $('setB').value.trim();
