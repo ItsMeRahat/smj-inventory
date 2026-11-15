@@ -1568,11 +1568,18 @@ $('saveSalesUrl').hidden = true;
 $('staffPur').onchange = () => { S.staffPurchase = $('staffPur').checked; save(); renderAll(); toast(t('savedAccess')); };
 $('saveAccess').onclick = async () => {
   const pins = {admin:$('pinAdmin').value.trim(), partner:$('pinPartner').value.trim(), staff:$('pinStaff').value.trim()};
-  if (!pins.admin && !pins.partner && !pins.staff){ toast(t('pinShort')); return; }
-  for (const k of Object.keys(pins)) if (pins[k] && !/^\d{4,12}$/.test(pins[k])){ toast(t('pinShort')); return; }
-  try { await authRequest('changePins', {token:S.authToken, pins:pins});
-    $('pinAdmin').value=''; $('pinPartner').value=''; $('pinStaff').value=''; toast(t('savedAccess'));
+  const entries = Object.entries(pins).filter(([,v]) => v !== '');
+  if (!entries.length){ toast('পরিবর্তন করার জন্য অন্তত একটি নতুন PIN লিখুন'); return; }
+  for (const [k,v] of entries) if (!/^\d{4,12}$/.test(v)){ toast(k.toUpperCase() + ' PIN must be 4–12 digits'); return; }
+  const btn = $('saveAccess');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    await authRequest('changePins', {token:S.authToken, pins:pins});
+    $('pinAdmin').value=''; $('pinPartner').value=''; $('pinStaff').value='';
+    toast(t('savedAccess'));
   } catch(e){ toast(e.message); }
+  finally { btn.disabled = false; }
 };
 $('file').onchange = e => {
   const f = e.target.files[0]; e.target.value = '';
@@ -1644,7 +1651,7 @@ async function login(r, pin){
   const btn = $('loginBtn');
   if (btn.disabled) return;
   const cleanPin = String(pin || '').trim();
-  if (!/^\\d{4,12}$/.test(cleanPin)){
+  if (!/^\d{4,12}$/.test(cleanPin)){
     toast(t('pinShort'));
     $('pin').focus();
     return;
@@ -1725,20 +1732,23 @@ function applyLang(){
   Object.values(S.cats).forEach(ensureCfg);
   Object.keys(S.cats).forEach(sweepRemarks);
   if (!S.cats[S.active]) S.active = Object.keys(S.cats)[0] || '';
+  // Never restore an authenticated session from browser storage.
+  // A fresh PIN is required after every page load.
+  S.session = '';
+  S.authToken = '';
   save();
   applyLang();
-  S.session = ''; // Never trust a role saved only on this device.
   try {
     const status = await authRequest('status');
-    if (S.authToken) {
-      const valid = await authRequest('validate', {token:S.authToken});
-      S.session = valid.role; unlock();
-      if (navigator.onLine && Object.keys(S.cats).length){ refreshNames(Object.keys(S.cats), true); syncSales(); }
-    } else {
-      showLock(!status.initialized);
-      if (!status.initialized && roleLinkMode) toast('Admin must complete the first setup before staff/partner login.');
-    }
-  } catch(e) { S.session=''; S.authToken=''; save(); showLock(false); toast('Server connection failed. Check internet or Apps Script deployment.'); }
+    showLock(!status.initialized);
+    if (!status.initialized && roleLinkMode) toast('Admin must complete the first setup before staff/partner login.');
+  } catch(e) {
+    S.session = '';
+    S.authToken = '';
+    save();
+    showLock(false);
+    toast('Server connection failed. Check internet or Apps Script deployment.');
+  }
   setInterval(() => {
     if (!role() || !S.auto || document.hidden || !navigator.onLine) return;
     if (Date.now() - (S.lastAuto || 0) < S.auto * 60000) return;
@@ -1746,7 +1756,7 @@ function applyLang(){
     refreshNames(Object.keys(S.cats), true);
     syncSales();
   }, 30000);
-})();
+})();;
 </script>
 </body>
 </html>
