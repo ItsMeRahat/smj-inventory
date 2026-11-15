@@ -830,8 +830,8 @@ function sheetFetchUrl(raw, tab){
   const value = String(raw || '').trim();
   if (!value) return '';
   // Accept a normal Google Sheets workbook URL and fetch only the named tab.
-  const match = value.match(/docs\\.google\\.com\\/spreadsheets\\/d\\/([a-zA-Z0-9_-]+)/);
-  if (match && !/\\/(pub|gviz)\\b/i.test(value)){
+  const match = value.match(/\/spreadsheets\/d\/([^/?#]+)/);
+  if (match && !/\/(pub|gviz)\b/i.test(value)){
     const sheet = String(tab || '').trim();
     if (!sheet) throw new Error('শীটের ট্যাব নাম লিখুন (যেমন Sanitary)');
     return 'https://docs.google.com/spreadsheets/d/' + match[1] +
