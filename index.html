@@ -1555,7 +1555,7 @@ function curRow(){
   if (!CUR) return null;
   const c = S.cats[CUR.cat];
   if (!c) return null;
-  const row = Number.isInteger(CUR.rowIndex) && CUR.rowIndex >= 0 ? c.rows[CUR.rowIndex] : findRow(c, CUR.code);
+  const row = Number.isInteger(CUR.rowIndex) && CUR.rowIndex >= 0 ? c.rows[CUR.rowIndex] : findRow(c, CUR.itemNo);
   return row ? {c: c, r: row} : null;
 }
 function itemNoIsUnique(c, itemNo){
@@ -1566,7 +1566,7 @@ function itemNoIsUnique(c, itemNo){
 function openSell(code, rowIndex){
   if (!can('sell')) return;
   const cat = S.active, c = S.cats[cat];
-  const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : c && findRow(c, code);
+  const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : null;
   if (!row){ toast(t('badFormat')); return; }
   const itemNoIdx = colIdx(c, 'Item No.');
   const itemNo = itemNoIdx >= 0 ? String(row[itemNoIdx] == null ? '' : row[itemNoIdx]).trim() : '';
@@ -1589,7 +1589,11 @@ function openRate(code, rowIndex){
   const cat = S.active, c = S.cats[cat];
   const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : c && findRow(c, code);
   if (!row){ toast(t('badFormat')); return; }
-  CUR = {cat: cat, code: String(code), rowIndex: c.rows.indexOf(row)};
+  const itemNoIdx = colIdx(c, 'Item No.');
+  const itemNo = itemNoIdx >= 0 ? String(row[itemNoIdx] == null ? '' : row[itemNoIdx]).trim() : '';
+  if (!itemNo){ toast('এই আইটেমের Item No. নেই। আগে Google Sheet-এ Item No. দিন।'); return; }
+  if (!itemNoIsUnique(c, itemNo)){ toast('এই Item No. একাধিকবার আছে। Google Sheet-এ unique Item No. ঠিক করুন।'); return; }
+  CUR = {cat: cat, code: String(code || ''), itemNo: itemNo, rowIndex: c.rows.indexOf(row)};
   const f = facts(c, row), rf = f.rf;
   openDlg(
     '<h3>' + esc(t('rateTitle')) + '</h3><div class="dsub">' + esc(f.name || t('nameNA')) + ' · <span class="code">' + esc(f.code) + '</span></div>' +
