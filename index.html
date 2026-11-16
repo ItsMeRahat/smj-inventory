@@ -1587,7 +1587,7 @@ function openSell(code, rowIndex){
 function openRate(code, rowIndex){
   if (!can('rate')) return;
   const cat = S.active, c = S.cats[cat];
-  const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : c && findRow(c, code);
+  const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : null;
   if (!row){ toast(t('badFormat')); return; }
   const itemNoIdx = colIdx(c, 'Item No.');
   const itemNo = itemNoIdx >= 0 ? String(row[itemNoIdx] == null ? '' : row[itemNoIdx]).trim() : '';
