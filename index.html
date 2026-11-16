@@ -1005,27 +1005,28 @@ function carryOver(nc, old){
 }
 
 /* ---------- Local row updates ---------- */
-function findRow(c, code){
-  const ci = colIdx(c, 'Item Code');
-  if (ci < 0) return null;
-  return c.rows.find(r => String(r[ci]).trim() === String(code).trim()) || null;
+function findRow(c, itemNo){
+  const ni = colIdx(c, 'Item No.');
+  if (ni < 0 || itemNo == null || String(itemNo).trim() === '') return null;
+  const key = String(itemNo).trim();
+  return c.rows.find(r => String(r[ni] == null ? '' : r[ni]).trim() === key) || null;
 }
-function applySaleLocal(c, code, qty){
+function applySaleLocal(c, itemNo, qty){
   const si = colIdx(c, 'Sales Quantity'), ri = colIdx(c, 'Received Quantity'), ki = colIdx(c, 'Stock in Hand');
-  const row = findRow(c, code);
+  const row = findRow(c, itemNo);
   if (!row || si < 0 || ri < 0 || ki < 0) return;
   const sales = (num(row[si]) || 0) + qty;
   row[si] = String(sales);
   row[ki] = String((num(row[ri]) || 0) - sales);
 }
-function setLocal(c, code, field, value){
+function setLocal(c, itemNo, field, value){
   let idx = colIdx(c, field);
   if (idx < 0){
     c.headers.push(field); c.rows.forEach(r => r.push('')); idx = c.headers.length - 1;
     c.cfg.key = c.headers.join('|') + '|v7';
     if (c.cfg.show) c.cfg.show.push(idx);
   }
-  const row = findRow(c, code);
+  const row = findRow(c, itemNo);
   if (row) row[idx] = String(value);
 }
 function rateFields(c){
@@ -1044,13 +1045,12 @@ function fixRemarkRow(name, r){
   if (si < 0 || mi < 0 || ci < 0) return;
   const want = wantRemark(num(r[si]), r[mi]);
   if (!want || r[mi] === want) return;
-  const code = r[ci], field = c.headers[mi];
+  const itemNo = String(r[ni] == null ? '' : r[ni]).trim(), field = c.headers[mi];
+  if (!itemNo) return;
   const rowIndex = c.rows.indexOf(r);
-  const itemNoIdx = colIdx(c, 'Item No.');
-  const itemNo = itemNoIdx >= 0 ? String(r[itemNoIdx] || '').trim() : '';
-  const pend = S.queue.find(q => !q.sent && q.cat === name && q.code === code && q.field === field);
-  if (pend){ pend.value = want; pend.failed = false; pend.rowIndex = rowIndex; pend.itemNo = itemNo; }
-  else S.queue.push({id: uid(), type: 'rate', cat: name, code: code, rowIndex: rowIndex, itemNo: itemNo, field: field, value: want, sent: false, failed: false, attempts: 0});
+  const pend = S.queue.find(q => !q.sent && q.cat === name && q.itemNo === itemNo && q.field === field);
+  if (pend){ pend.value = want; pend.failed = false; pend.rowIndex = rowIndex; }
+  else S.queue.push({id: uid(), type: 'rate', cat: name, itemNo: itemNo, code: String(r[colIdx(c,'Item Code')] || '').trim(), rowIndex: rowIndex, field: field, value: want, sent: false, failed: false, attempts: 0});
   r[mi] = want;
 }
 function sweepRemarks(name){ const c = S.cats[name]; if (c) c.rows.forEach(r => fixRemarkRow(name, r)); }
@@ -1072,8 +1072,8 @@ function facts(c, r){
   return {rf: rf, stock: stock, recv: recv, buy: buy, sell: sell, level: level, profit: profit, pct: pct,
     code: ci >= 0 ? r[ci] : '', name: r[c.cfg.title] || '', category: category, mi: mi, ci: ci};
 }
-function pendingFor(cat, code){
-  return S.queue.filter(q => !q.sent && q.cat === cat && q.code === String(code));
+function pendingFor(cat, itemNo){
+  return S.queue.filter(q => !q.sent && q.cat === cat && q.itemNo === String(itemNo));
 }
 
 /* ---------- Sync ---------- */
@@ -1147,7 +1147,7 @@ async function refreshCat(name){
     if (!tb) return 'bad';
     const nc = mkCat(tb.headers, tb.rows, c.url, c.tab);
     S.queue.filter(q => !q.sent && q.cat === name).forEach(q =>
-      q.type === 'rate' ? setLocal(nc, q.code, q.field, q.value) : applySaleLocal(nc, q.code, q.qty));
+      q.type === 'rate' ? setLocal(nc, q.itemNo, q.field, q.value) : applySaleLocal(nc, q.itemNo, q.qty));
     S.cats[name] = carryOver(nc, c);
     sweepRemarks(name);
     save();
@@ -1192,8 +1192,8 @@ async function syncSales(){
         const itemNo = q.itemNo || (row && itemNoIdx >= 0 ? String(row[itemNoIdx] || '').trim() : '');
         const rowData = row && catData ? Object.fromEntries(catData.headers.map((h, i) => [String(h).trim(), String(row[i] == null ? '' : row[i]).trim()])) : {};
         return q.type === 'rate'
-          ? {id: q.id, type: 'rate', code: String(q.code || '').trim(), itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, field: q.field, value: q.value}
-          : {id: q.id, type: 'sale', code: String(q.code || '').trim(), itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, qty: q.qty};
+          ? {id: q.id, type: 'rate', itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, field: q.field, value: q.value}
+          : {id: q.id, type: 'sale', itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, qty: q.qty};
       })
     };
     items.forEach(q => { q.attempts = (q.attempts || 0) + 1; });
@@ -1207,7 +1207,7 @@ async function syncSales(){
         const r = map[q.id];
         if (!r){ q.err = 'no-response'; return; }
         if (r.status === 'done' || r.status === 'skipped'){ q.sent = true; q.err = ''; }
-        else { q.failed = true; q.err = r.status === 'notfound' ? 'Item code not found in sheet' : (r.error || 'write error'); }
+        else { q.failed = true; q.err = r.status === 'notfound' ? 'Item No. not found in sheet' : (r.error || 'write error'); }
       });
     } catch(e){
       items.forEach(q => { q.err = navigator.onLine ? 'Could not reach Apps Script (' + e.message + ')' : 'offline'; });
@@ -1235,7 +1235,7 @@ function renderTabs(){
     ' <em>' + fmt(S.cats[n].rows.length) + '</em></button>').join('');
 }
 function syncChip(f){
-  const pend = pendingFor(S.active, f.code);
+  const c = S.cats[S.active]; const ni = c ? colIdx(c, 'Item No.') : -1; const itemNo = ni >= 0 ? String((c.rows.find(r => String(r[colIdx(c,'Item Code')] || '') === String(f.code)) || [])[ni] || '') : ''; const pend = pendingFor(S.active, itemNo);
   if (!pend.length) return '';
   const bad = pend.some(q => q.failed);
   return '<span class="syncchip ' + (bad ? 'bad' : '') + '"><i></i>' + esc(bad ? t('syncFailed') : t('syncing')) + '</span>';
