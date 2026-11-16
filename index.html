@@ -1558,6 +1558,11 @@ function curRow(){
   const row = Number.isInteger(CUR.rowIndex) && CUR.rowIndex >= 0 ? c.rows[CUR.rowIndex] : findRow(c, CUR.code);
   return row ? {c: c, r: row} : null;
 }
+function itemNoIsUnique(c, itemNo){
+  const ni = colIdx(c, 'Item No.');
+  const key = String(itemNo == null ? '' : itemNo).trim();
+  return !!(ni >= 0 && key && c.rows.filter(r => String(r[ni] == null ? '' : r[ni]).trim() === key).length === 1);
+}
 function openSell(code, rowIndex){
   if (!can('sell')) return;
   const cat = S.active, c = S.cats[cat];
@@ -1566,6 +1571,7 @@ function openSell(code, rowIndex){
   const itemNoIdx = colIdx(c, 'Item No.');
   const itemNo = itemNoIdx >= 0 ? String(row[itemNoIdx] == null ? '' : row[itemNoIdx]).trim() : '';
   if (!itemNo){ toast('এই আইটেমের Item No. নেই। আগে Google Sheet-এ Item No. দিন।'); return; }
+  if (!itemNoIsUnique(c, itemNo)){ toast('এই Item No. একাধিকবার আছে। Google Sheet-এ unique Item No. ঠিক করুন।'); return; }
   CUR = {cat: cat, code: String(code || ''), itemNo: itemNo, rowIndex: c.rows.indexOf(row)};
   const f = facts(c, row);
   openDlg(
