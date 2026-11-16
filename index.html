@@ -1041,8 +1041,8 @@ function wantRemark(stock, current){
 }
 function fixRemarkRow(name, r){
   const c = S.cats[name]; if (!c) return;
-  const si = colIdx(c, 'Stock in Hand'), mi = colIdx(c, 'Remarks'), ci = colIdx(c, 'Item Code');
-  if (si < 0 || mi < 0 || ci < 0) return;
+  const si = colIdx(c, 'Stock in Hand'), mi = colIdx(c, 'Remarks'), ni = colIdx(c, 'Item No.');
+  if (si < 0 || mi < 0 || ni < 0) return;
   const want = wantRemark(num(r[si]), r[mi]);
   if (!want || r[mi] === want) return;
   const itemNo = String(r[ni] == null ? '' : r[ni]).trim(), field = c.headers[mi];
@@ -1069,8 +1069,9 @@ function facts(c, r){
   if (buy !== null && sell !== null && sell > 0){ profit = sell - buy; pct = buy > 0 ? profit / buy * 100 : null; }
   const catIdx = c.headers.findIndex(h => /^(category|ক্যাটাগরি|type)$/i.test(h.trim()));
   const category = catIdx >= 0 && r[catIdx] ? r[catIdx] : S.active;
+  const ni = colIdx(c, 'Item No.');
   return {rf: rf, stock: stock, recv: recv, buy: buy, sell: sell, level: level, profit: profit, pct: pct,
-    code: ci >= 0 ? r[ci] : '', name: r[c.cfg.title] || '', category: category, mi: mi, ci: ci};
+    code: ci >= 0 ? r[ci] : '', itemNo: ni >= 0 ? String(r[ni] == null ? '' : r[ni]).trim() : '', name: r[c.cfg.title] || '', category: category, mi: mi, ci: ci};
 }
 function pendingFor(cat, itemNo){
   return S.queue.filter(q => !q.sent && q.cat === cat && q.itemNo === String(itemNo));
@@ -1184,12 +1185,13 @@ async function syncSales(){
     const payload = {
       action: 'sync', token: S.authToken,
       sheet: (c && c.tab) || cat,
-      items: items.map(q => {
+      items: items.filter(q => !!String(q.itemNo || '').trim()).map(q => {
         const catData = S.cats[cat];
         const row = catData && Number.isInteger(q.rowIndex) ? catData.rows[q.rowIndex] : null;
         const itemName = row && catData.cfg ? String(row[catData.cfg.title] || '').trim() : '';
         const itemNoIdx = catData ? colIdx(catData, 'Item No.') : -1;
-        const itemNo = q.itemNo || (row && itemNoIdx >= 0 ? String(row[itemNoIdx] || '').trim() : '');
+        const itemNo = String(q.itemNo || (row && itemNoIdx >= 0 ? row[itemNoIdx] : '') || '').trim();
+        if (!itemNo){ q.failed = true; q.err = 'Missing Item No. — verify the row before retrying'; }
         const rowData = row && catData ? Object.fromEntries(catData.headers.map((h, i) => [String(h).trim(), String(row[i] == null ? '' : row[i]).trim()])) : {};
         return q.type === 'rate'
           ? {id: q.id, type: 'rate', itemNo: itemNo, rowIndex: q.rowIndex, itemName: itemName, rowData: rowData, field: q.field, value: q.value}
@@ -1207,7 +1209,7 @@ async function syncSales(){
         const r = map[q.id];
         if (!r){ q.err = 'no-response'; return; }
         if (r.status === 'done' || r.status === 'skipped'){ q.sent = true; q.err = ''; }
-        else { q.failed = true; q.err = r.status === 'notfound' ? 'Item No. not found in sheet' : (r.error || 'write error'); }
+        else { q.failed = true; q.err = r.status === 'notfound' ? 'Item No. not found in sheet' : r.status === 'duplicate' ? 'Duplicate Item No. — unique series required' : (r.error || 'write error'); }
       });
     } catch(e){
       items.forEach(q => { q.err = navigator.onLine ? 'Could not reach Apps Script (' + e.message + ')' : 'offline'; });
@@ -1235,7 +1237,8 @@ function renderTabs(){
     ' <em>' + fmt(S.cats[n].rows.length) + '</em></button>').join('');
 }
 function syncChip(f){
-  const c = S.cats[S.active]; const ni = c ? colIdx(c, 'Item No.') : -1; const itemNo = ni >= 0 ? String((c.rows.find(r => String(r[colIdx(c,'Item Code')] || '') === String(f.code)) || [])[ni] || '') : ''; const pend = pendingFor(S.active, itemNo);
+  const itemNo = String(f.itemNo || '');
+  const pend = itemNo ? pendingFor(S.active, itemNo) : [];
   if (!pend.length) return '';
   const bad = pend.some(q => q.failed);
   return '<span class="syncchip ' + (bad ? 'bad' : '') + '"><i></i>' + esc(bad ? t('syncFailed') : t('syncing')) + '</span>';
@@ -1560,7 +1563,10 @@ function openSell(code, rowIndex){
   const cat = S.active, c = S.cats[cat];
   const row = c && Number.isInteger(rowIndex) && rowIndex >= 0 ? c.rows[rowIndex] : c && findRow(c, code);
   if (!row){ toast(t('badFormat')); return; }
-  CUR = {cat: cat, code: String(code), rowIndex: c.rows.indexOf(row)};
+  const itemNoIdx = colIdx(c, 'Item No.');
+  const itemNo = itemNoIdx >= 0 ? String(row[itemNoIdx] == null ? '' : row[itemNoIdx]).trim() : '';
+  if (!itemNo){ toast('এই আইটেমের Item No. নেই। আগে Google Sheet-এ Item No. দিন।'); return; }
+  CUR = {cat: cat, code: String(code || ''), itemNo: itemNo, rowIndex: c.rows.indexOf(row)};
   const f = facts(c, row);
   openDlg(
     '<h3>' + esc(t('sell')) + '</h3><div class="dsub">' + esc(f.name || t('nameNA')) + ' · <span class="code">' + esc(f.code) + '</span></div>' +
@@ -1602,9 +1608,9 @@ async function submitSale(){
   if (!qty || qty <= 0){ setDStat('bad', t('qtyBad')); return; }
   const f = facts(cur.c, cur.r);
   if (f.stock !== null && qty > f.stock && !confirm(t('confirmStock') + ': ' + fmt(f.stock) + '. ' + fmt(qty) + ' ' + t('confirmQ'))) return;
-  const op = {id: uid(), type: 'sale', cat: CUR.cat, code: CUR.code, rowIndex: CUR.rowIndex, qty: qty, sent: false, failed: false, attempts: 0};
+  const op = {id: uid(), type: 'sale', cat: CUR.cat, itemNo: CUR.itemNo, code: CUR.code, rowIndex: CUR.rowIndex, qty: qty, sent: false, failed: false, attempts: 0};
   S.queue.push(op);
-  applySaleLocal(cur.c, CUR.code, qty);
+  applySaleLocal(cur.c, CUR.itemNo, qty);
   fixRemarkRow(S.active, cur.r);
   save();
   const go = $('dGo'); if (go) go.disabled = true;
@@ -1638,8 +1644,8 @@ async function submitRates(){
   });
   if (bad){ setDStat('bad', t('onlyNum')); return; }
   if (!changes.length){ setDStat('bad', t('noChange')); return; }
-  const ops = changes.map(ch => ({id: uid(), type: 'rate', cat: CUR.cat, code: CUR.code, rowIndex: CUR.rowIndex, field: ch.field, value: ch.value, sent: false, failed: false, attempts: 0}));
-  ops.forEach(op => { S.queue.push(op); if (Number.isInteger(CUR.rowIndex) && cur.c.rows[CUR.rowIndex]) { const ix = colIdx(cur.c, op.field); if (ix >= 0) cur.c.rows[CUR.rowIndex][ix] = String(op.value); } else setLocal(cur.c, CUR.code, op.field, op.value); });
+  const ops = changes.map(ch => ({id: uid(), type: 'rate', cat: CUR.cat, itemNo: CUR.itemNo, code: CUR.code, rowIndex: CUR.rowIndex, field: ch.field, value: ch.value, sent: false, failed: false, attempts: 0}));
+  ops.forEach(op => { S.queue.push(op); if (Number.isInteger(CUR.rowIndex) && cur.c.rows[CUR.rowIndex]) { const ix = colIdx(cur.c, op.field); if (ix >= 0) cur.c.rows[CUR.rowIndex][ix] = String(op.value); } else setLocal(cur.c, CUR.itemNo, op.field, op.value); });
   save();
   const go = $('dGo'); if (go) go.disabled = true;
   setDStat('wait', t('savingSheet'));
@@ -1979,6 +1985,15 @@ function applyLang(){
     S.seeded = true;
   }
   Object.values(S.cats).forEach(ensureCfg);
+  // Safely migrate old queued operations: only rowIndex may supply the Item No.; never infer it from Item Code.
+  S.queue.forEach(q => {
+    if (q.sent || q.itemNo) return;
+    const c = S.cats[q.cat], ni = c ? colIdx(c, 'Item No.') : -1;
+    const row = c && Number.isInteger(q.rowIndex) ? c.rows[q.rowIndex] : null;
+    const itemNo = row && ni >= 0 ? String(row[ni] == null ? '' : row[ni]).trim() : '';
+    if (itemNo) q.itemNo = itemNo;
+    else { q.failed = true; q.err = 'Legacy queue has no safe Item No. mapping; verify and discard this operation'; }
+  });
   Object.keys(S.cats).forEach(sweepRemarks);
   if (!S.cats[S.active]) S.active = Object.keys(S.cats)[0] || '';
   // Never restore an authenticated session from browser storage.
