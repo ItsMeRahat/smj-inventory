@@ -673,6 +673,8 @@ body.auth-open{
             <button class="btn sec2" id="testConn" type="button" data-t="testConn"></button>
             <button class="btn" id="saveUrl" type="button" data-t="saveLink"></button>
           </div>
+          <button class="btn block" id="scanSheets" type="button" style="margin-top:10px">🔄 Scan all Workbook Tabs</button>
+          <div class="hint">একই Google Workbook-এর সব বৈধ Inventory Tab স্বয়ংক্রিয়ভাবে Category হবে। নতুন Tab যোগ করলে Scan করুন অথবা Auto Refresh চালু রাখুন।</div>
           <div class="hint" id="connRes"></div>
           <label class="fl"><span data-t="autoLbl"></span>
             <select class="inp" id="autoSel">
@@ -904,7 +906,7 @@ let stockF = 'all';
 let S = load(), HITS = [], selRole = roleLinkMode || (forcedRole === 'admin' ? 'admin' : 'admin'), CUR = null, syncing = false, page = 'dashboard', view = 'grid', sortKey = 'seq', sortDir = 1, loading = false;
 
 function load(){
-  const base = {active:'Sanitary', cats:{}, queue:[], salesUrl:AUTH_URL, seeded:false, lang:'bn', last:'', pins:{}, session:'', authToken:'', staffPurchase:false, auto:0, side:false, lastAuto:0};
+  const base = {active:'Sanitary', cats:{}, queue:[], salesUrl:AUTH_URL, workbookUrl:'', seeded:false, lang:'bn', last:'', pins:{}, session:'', authToken:'', staffPurchase:false, auto:0, side:false, lastAuto:0};
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (s && s.cats){ const m = Object.assign(base, s); m.pins = m.pins || {}; m.queue = m.queue || []; return m; }
@@ -1089,7 +1091,6 @@ function setNetPill(){
 function sheetFetchUrl(raw, tab){
   const value = String(raw || '').trim();
   if (!value) return '';
-  // Accept a normal Google Sheets workbook URL and fetch only the named tab.
   const match = value.match(/\/spreadsheets\/d\/([^/?#]+)/);
   if (match && !/\/(pub|gviz)\b/i.test(value)){
     const sheet = String(tab || '').trim();
@@ -1097,8 +1098,41 @@ function sheetFetchUrl(raw, tab){
     return 'https://docs.google.com/spreadsheets/d/' + match[1] +
       '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(sheet);
   }
-  // Published CSV or an already prepared gviz URL is used as supplied.
   return value;
+}
+function getWorkbookUrl(){
+  if (S.workbookUrl) return S.workbookUrl;
+  const existing = Object.values(S.cats).find(c => c && c.url && /\/spreadsheets\/d\//.test(c.url));
+  if (existing) S.workbookUrl = existing.url;
+  return S.workbookUrl || '';
+}
+async function discoverSheets(silent){
+  if (!role() || !S.authToken) return false;
+  const workbookUrl = getWorkbookUrl();
+  if (!workbookUrl){ if (!silent) toast('Settings-এ Google Workbook URL দিয়ে Save করুন।'); return false; }
+  try {
+    const result = await authRequest('listSheets', {token:S.authToken});
+    const names = (result.sheets || []).map(x => String(x.name || '').trim()).filter(Boolean);
+    if (!names.length){ if (!silent) toast('কোনো valid Inventory Tab পাওয়া যায়নি। Header পরীক্ষা করুন।'); return false; }
+    const keep = new Set(names);
+    Object.keys(S.cats).forEach(name => {
+      const c = S.cats[name];
+      if (c && c.autoDiscovered && !keep.has(c.tab || name)){
+        const hasPending = S.queue.some(q => !q.sent && q.cat === name);
+        if (!hasPending) delete S.cats[name]; else c.sheetMissing = true;
+      }
+    });
+    names.forEach(name => {
+      let c = S.cats[name];
+      if (!c) c = S.cats[name] = mkCat([], [], workbookUrl, name);
+      c.url = workbookUrl; c.tab = name; c.autoDiscovered = true; c.sheetMissing = false;
+    });
+    if (!S.cats[S.active] || S.cats[S.active].sheetMissing) S.active = names[0];
+    save();
+    const ok = await refreshNames(names, true);
+    if (!silent) toast(ok ? names.length + 'টি Category Tab পাওয়া ও Update হয়েছে।' : 'Tab পাওয়া গেছে, কিছু Sheet Update হয়নি।');
+    return true;
+  } catch(e){ if (!silent) toast('Sheet discovery failed: ' + e.message); return false; }
 }
 async function refreshCat(name){
   const c = S.cats[name];
@@ -1454,7 +1488,8 @@ function renderSync(){
 function renderSettings(){
   const c = S.cats[S.active];
   if (!$('catName').value && c) $('catName').value = S.active;
-  if (c && document.activeElement !== $('url')){ $('url').value = c.url || ''; $('tab').value = c.tab || S.active; }
+  if (document.activeElement !== $('url')) $('url').value = getWorkbookUrl() || (c && c.url) || '';
+  if (c && document.activeElement !== $('tab')) $('tab').value = c.tab || S.active;
   $('salesUrl').value = AUTH_URL;
   $('salesUrl').readOnly = true;
   $('staffPur').checked = !!S.staffPurchase;
@@ -1704,20 +1739,21 @@ $('testConn').onclick = async () => {
     $('connRes').innerHTML = '<span style="color:var(--bad);font-weight:600">✕ ' + esc(t('testBad')) + ' (' + esc(e.message) + ')</span>';
   }
 };
-$('saveUrl').onclick = () => {
+$('saveUrl').onclick = async () => {
   const u = $('url').value.trim();
-  const name = ($('catName').value || S.active || '').trim();
-  const tab = $('tab').value.trim() || name;
-  if (!name){ toast(t('nameNeed')); $('catName').focus(); return; }
-  if (!u || u.indexOf('http') !== 0){ toast('Google Sheet URL দিন'); $('url').focus(); return; }
-  if (!tab){ toast('শীটের Tab নাম লিখুন'); $('tab').focus(); return; }
-  let c = S.cats[name];
-  if (!c) c = S.cats[name] = mkCat([], [], u, tab);
-  c.url = u; c.tab = tab;
-  S.active = name;
-  save(); renderAll();
-  refreshNames([name], false);
+  if (!u || u.indexOf('http') !== 0){ toast('Google Sheet Workbook URL দিন'); $('url').focus(); return; }
+  if (!/\/spreadsheets\/d\//.test(u)){ toast('একটি Google Spreadsheet Workbook URL দিন'); $('url').focus(); return; }
+  S.workbookUrl = u;
+  const currentTab = $('tab').value.trim();
+  const currentName = ($('catName').value || currentTab || S.active || '').trim();
+  if (currentTab && currentName){
+    let c = S.cats[currentName];
+    if (!c) c = S.cats[currentName] = mkCat([], [], u, currentTab);
+    c.url = u; c.tab = currentTab;
+  }
+  save(); await discoverSheets(false); renderAll();
 };
+$('scanSheets').onclick = () => discoverSheets(false);
 $('autoSel').onchange = () => { S.auto = +$('autoSel').value; S.lastAuto = Date.now(); save(); toast(S.auto ? 'Auto: ' + S.auto + ' min' : t('autoOff')); };
 $('saveSalesUrl').hidden = true;
 $('staffPur').onchange = () => { S.staffPurchase = $('staffPur').checked; save(); renderAll(); toast(t('savedAccess')); };
@@ -1833,7 +1869,7 @@ async function login(r, pin){
     save();
     unlock();
     toast(t('welcome'));
-    if (navigator.onLine) syncSales();
+    if (navigator.onLine){ discoverSheets(true); syncSales(); }
   } catch(e){
     S.session = '';
     S.authToken = '';
@@ -1854,6 +1890,7 @@ async function setupDone(){
     const data = await authRequest('setup', {pins:{admin:a,partner:p,staff:s}});
     S.session = 'admin'; S.authToken = data.token; page='dashboard';
     ['setA','setB','setP','setS'].forEach(id => $(id).value=''); save(); unlock(); toast(t('welcome'));
+    if (navigator.onLine) discoverSheets(true);
   } catch(e){ toast(e.message); }
 }
 async function logout(){
@@ -1968,7 +2005,7 @@ function applyLang(){
     if (!role() || !S.auto || document.hidden || !navigator.onLine) return;
     if (Date.now() - (S.lastAuto || 0) < S.auto * 60000) return;
     S.lastAuto = Date.now(); save();
-    refreshNames(Object.keys(S.cats), true);
+    discoverSheets(true);
     syncSales();
   }, 30000);
 })();;
